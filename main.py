@@ -21,7 +21,7 @@ def keep_alive():
 
 # --- 2. إعدادات البوت ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-SNAP_LINK = "https://www.snapchat.com/add/YOUR_USERNAME" # ضع حسابك هنا
+SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" # ضع حسابك هنا
 bot = telebot.TeleBot(API_TOKEN)
 
 # لتخزين من ضغط على زر المتابعة
@@ -93,3 +93,4 @@ def handle_all(message):
 if __name__ == "__main__":
     keep_alive()
     bot.polling(non_stop=True)
+
