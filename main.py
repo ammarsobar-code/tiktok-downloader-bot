@@ -5,7 +5,7 @@ from yt_dlp import YoutubeDL
 from flask import Flask
 from threading import Thread
 
-# --- إعداد سيرفر Flask لتجاوز مشكلة البورت في Render ---
+# --- 1. سيرفر Flask الصغير (لحل مشكلة البورت في Render) ---
 app = Flask('')
 
 @app.route('/')
@@ -19,75 +19,49 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- إعداد البوت ---
+# --- 2. إعدادات البوت ---
 API_TOKEN = os.getenv('BOT_TOKEN')
-# ضع رابط حسابك في السناب شات هنا
-SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" 
+SNAP_LINK = "https://www.snapchat.com/add/YOUR_USERNAME" # ضع حسابك هنا
 bot = telebot.TeleBot(API_TOKEN)
 
-# قاموس لتخزين حالة المستخدم
-user_status = {}
+# لتخزين من ضغط على زر المتابعة
+verified_users = set()
 
-# --- معالج أمر /start ---
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.chat.id
+# --- 3. الدوال المساعدة للنصوص ---
+def send_follow_request(chat_id):
+    markup = types.InlineKeyboardMarkup()
+    btn = types.InlineKeyboardButton("تم المتابعة ✅ | Done ✅", callback_data="verify_me")
+    markup.add(btn)
     
-    # المرحلة الأولى: لم يسبق له الضغط على ستارت
-    if user_id not in user_status:
-        user_status[user_id] = "step_1"
-        markup = types.InlineKeyboardMarkup()
-        btn = types.InlineKeyboardButton("تم المتابعة ✅ | Done ✅", callback_data="check_follow")
-        markup.add(btn)
-        
-        msg = (f"أولاً، الرجاء متابعة حسابي في سناب شات لتشغيل البوت:\n"
-               f"{SNAP_LINK}\n\n"
-               f"-----------------------------------\n"
-               f"First, please follow my Snapchat account to activate the bot:\n"
-               f"{SNAP_LINK}\n\n"
-               f"بعد المتابعة اضغط على الزر بالأسفل.\n"
-               f"After following, click the button below.")
-        bot.send_message(user_id, msg, reply_markup=markup)
-    
-    # المرحلة الثانية: بعد ظهور رسالة التنبيه والضغط على ستارت مجدداً
-    elif user_status[user_id] == "step_2":
-        user_status[user_id] = "verified"
-        msg = ("تم تفعيل البوت بنجاح! أرسل الآن رابط تيك توك.\n"
-               "-----------------------------------\n"
-               "Bot activated successfully! Send TikTok link now.")
-        bot.send_message(user_id, msg)
-    
-    # إذا كان مفعلاً بالفعل
-    else:
-        bot.send_message(user_id, "أرسل رابط تيك توك | Send TikTok link")
+    text = (f"أولاً، الرجاء متابعة حسابي في سناب شات لتشغيل البوت:\n{SNAP_LINK}\n\n"
+            f"-----------------------------------\n"
+            f"First, please follow my Snapchat account to activate the bot:\n{SNAP_LINK}")
+    bot.send_message(chat_id, text, reply_markup=markup)
 
-# --- معالج أزرار التحقق ---
-@bot.callback_query_handler(func=lambda call: call.data == "check_follow")
-def callback_inline(call):
+# --- 4. معالجة زر "تم المتابعة" (خطوة واحدة فقط) ---
+@bot.callback_query_handler(func=lambda call: call.data == "verify_me")
+def verify_user(call):
     user_id = call.message.chat.id
+    verified_users.add(user_id)
     
-    if user_status.get(user_id) == "step_1":
-        user_status[user_id] = "step_2"
-        msg = (f"⚠️ يبدو أنك لم تتابع حسابي في سناب شات بعد!\n"
-               f"الرجاء التأكد من المتابعة: {SNAP_LINK}\n"
-               f"ثم اضغط /start للبدء.\n\n"
-               f"-----------------------------------\n"
-               f"⚠️ It seems you haven't followed my Snapchat yet!\n"
-               f"Please make sure to follow: {SNAP_LINK}\n"
-               f"Then press /start to begin.")
-        bot.edit_message_text(msg, user_id, call.message.message_id)
+    success_text = ("تم تفعيل البوت بنجاح! ✅ أرسل الآن رابط تيك توك.\n"
+                    "-----------------------------------\n"
+                    "Bot activated successfully! ✅ Send TikTok link now.")
+    bot.edit_message_text(success_text, user_id, call.message.message_id)
 
-# --- معالج تحميل الفيديو ---
+# --- 5. معالج الرسائل الرئيسي ---
 @bot.message_handler(func=lambda message: True)
-def handle_download(message):
+def handle_all(message):
     user_id = message.chat.id
-    url = message.text
+    text = message.text
 
-    if user_status.get(user_id) != "verified":
-        bot.reply_to(message, "الرجاء الضغط على /start أولاً\nPlease press /start first")
+    # إذا لم يضغط المستخدم على الزر بعد
+    if user_id not in verified_users:
+        send_follow_request(user_id)
         return
 
-    if "tiktok.com" in url:
+    # إذا كان المستخدم مفعلاً
+    if "tiktok.com" in text:
         progress_msg = bot.reply_to(message, "جاري التحميل... ⏳ | Downloading... ⏳")
         try:
             filename = f"video_{user_id}.mp4"
@@ -95,9 +69,10 @@ def handle_download(message):
                 'outtmpl': filename,
                 'format': 'best',
                 'quiet': True,
+                'no_warnings': True
             }
             with YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+                ydl.download([text])
             
             with open(filename, 'rb') as video:
                 bot.send_video(user_id, video, caption="تم تحميل الفيديو بنجاح ✅\nVideo downloaded successfully ✅")
@@ -105,10 +80,14 @@ def handle_download(message):
             os.remove(filename)
             bot.delete_message(user_id, progress_msg.message_id)
             
-        except Exception as e:
-            bot.edit_message_text("خطأ في التحميل، تأكد من الرابط.\nDownload error, check the link.", user_id, progress_msg.message_id)
+        except Exception:
+            bot.edit_message_text("حدث خطأ، تأكد من الرابط.\nError, check the link.", user_id, progress_msg.message_id)
+    
     else:
-        bot.reply_to(message, "رابط غير صحيح | Invalid link")
+        # إذا أرسل أي شيء غير رابط تيك توك
+        bot.reply_to(message, "⚠️ عذراً، هذا ليس رابط تيك توك صحيح!\n"
+                             "-----------------------------------\n"
+                             "⚠️ Sorry, this is not a valid TikTok link!")
 
 # تشغيل البوت
 if __name__ == "__main__":
