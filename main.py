@@ -1,4 +1,5 @@
 import os
+import re
 import telebot
 from telebot import types
 from yt_dlp import YoutubeDL
@@ -11,7 +12,12 @@ SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 bot = telebot.TeleBot(API_TOKEN)
 verified_users = set()
 
-# --- دالة طلب الاشتراك (كل لغة في سطر) ---
+# دالة للتحقق هل الرابط تيك توك أم لا
+def is_tiktok_url(url):
+    pattern = r'(https?://)?(www\.|vm\.|vt\.)?tiktok\.com/.*'
+    return re.match(pattern, url)
+
+# --- دالة طلب الاشتراك ---
 def send_subscription_request(chat_id):
     markup = types.InlineKeyboardMarkup()
     btn = types.InlineKeyboardButton("تمت المتابعة ✅ Done", callback_data="verify_step")
@@ -19,7 +25,7 @@ def send_subscription_request(chat_id):
     
     text = (
         "أهلاً بك في بوت تحميل مقاطع وصور التيك توك بدون العلامة المائية\n"
-        "Welcome to TikTok video and photo downloader bot without watermark\n"
+        "Welcome to TikTok video and photo downloader bot without watermark\n\n"
         "ولتشغيل البوت يرجى متابعة حسابي في سناب شات أولاً\n"
         "To activate the bot please follow my Snapchat account first\n\n"
         f"{SNAP_LINK}"
@@ -57,49 +63,42 @@ def handle_final_check(call):
     bot.edit_message_text(success_text, user_id, call.message.message_id)
     verified_users.add(f"active_{user_id}")
 
-# --- معالجة التحميل (فيديو وصور) ---
+# --- معالجة التحميل والفرز ---
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message):
     user_id = message.chat.id
-    text = message.text
+    url = message.text.strip()
     active_key = f"active_{user_id}"
 
+    # 1. التحقق من التفعيل أولاً
     if active_key not in verified_users:
         send_subscription_request(user_id)
         return
 
-    if "tiktok.com" in text:
+    # 2. التحقق من صحة الرابط (هل هو تيك توك؟)
+    if is_tiktok_url(url):
         prog_msg = bot.reply_to(message, "جاري التحميل... ⏳\nDownloading... ⏳")
         
         try:
-            # إعدادات yt-dlp لجلب الروابط المباشرة
             ydl_opts = {'quiet': True, 'no_warnings': True}
             with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(text, download=False)
+                info = ydl.extract_info(url, download=False)
                 
-                # حالة الصور (Slideshow)
-                if 'entries' in info or ('formats' not in info and 'images' in info):
-                    images = info.get('images', [])
-                    if not images and 'entries' in info:
-                        images = info['entries'][0].get('images', [])
-                        
-                    if images:
-                        media_group = []
-                        for i, img in enumerate(images[:10]): # حد أقصى 10 صور
-                            img_url = img.get('url')
-                            if img_url:
-                                caption = "تمت التحميل بنجاح ✅\nDownloaded successfully ✅" if i == 0 else ""
-                                media_group.append(types.InputMediaPhoto(img_url, caption=caption))
-                        
-                        bot.send_media_group(user_id, media_group)
-                        bot.delete_message(user_id, prog_msg.message_id)
-                        return
+                # التعامل مع الصور (Slideshow)
+                if 'images' in info and info['images']:
+                    media_group = []
+                    for i, img in enumerate(info['images'][:10]):
+                        cap = "تمت التحميل بنجاح ✅\nDownloaded successfully ✅" if i == 0 else ""
+                        media_group.append(types.InputMediaPhoto(img['url'], caption=cap))
+                    bot.send_media_group(user_id, media_group)
+                    bot.delete_message(user_id, prog_msg.message_id)
+                    return
 
-                # حالة الفيديو
+                # التعامل مع الفيديو
                 filename = f"vid_{user_id}.mp4"
                 ydl_opts_dl = {'outtmpl': filename, 'format': 'best', 'quiet': True}
                 with YoutubeDL(ydl_opts_dl) as ydl_dl:
-                    ydl_dl.download([text])
+                    ydl_dl.download([url])
                 
                 with open(filename, 'rb') as video:
                     bot.send_video(user_id, video, caption="تمت التحميل بنجاح ✅\nDownloaded successfully ✅")
@@ -115,9 +114,14 @@ def handle_messages(message):
                 "To contribute, please report the error to the developer"
             )
             bot.edit_message_text(error_text, user_id, prog_msg.message_id)
-            bot.send_message(ADMIN_ID, f"🚨 Error Log:\nLink: {text}\nError: {str(e)[:200]}")
+            bot.send_message(ADMIN_ID, f"🚨 Error Log:\nLink: {url}\nError: {str(e)[:200]}")
     
+    # 3. إذا كان الرابط ليس تيك توك أو مجرد نص عادي
     else:
-        bot.reply_to(message, "الرجاء التحقق من الرابط\nPlease check the link")
+        invalid_text = (
+            "الرجاء التحقق من الرابط\n"
+            "Please check the link"
+        )
+        bot.reply_to(message, invalid_text)
 
 bot.infinity_polling()
