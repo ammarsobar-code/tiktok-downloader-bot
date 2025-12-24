@@ -2,95 +2,122 @@ import os
 import telebot
 from telebot import types
 from yt_dlp import YoutubeDL
-from flask import Flask
-from threading import Thread
 
-# --- 1. سيرفر Flask الصغير (لحل مشكلة البورت في Render) ---
-app = Flask('')
+# --- إعدادات أساسية ---
+API_TOKEN = '8128459308:AAGlhRg9IU2pxyY71WdduoFQegSBN1B6KIo'
+ADMIN_ID = '5148560761'
+SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 
-@app.route('/')
-def home():
-    return "Bot is Running!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# --- 2. إعدادات البوت ---
-API_TOKEN = os.getenv('BOT_TOKEN')
-SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" # ضع حسابك هنا
 bot = telebot.TeleBot(API_TOKEN)
-
-# لتخزين من ضغط على زر المتابعة
 verified_users = set()
 
-# --- 3. الدوال المساعدة للنصوص ---
-def send_follow_request(chat_id):
+# --- دالة طلب الاشتراك (كل لغة في سطر) ---
+def send_subscription_request(chat_id):
     markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton("تم المتابعة ✅ | Done ✅", callback_data="verify_me")
+    btn = types.InlineKeyboardButton("تمت المتابعة ✅ Done", callback_data="verify_step")
     markup.add(btn)
     
-    text = (f"أولاً، الرجاء متابعة حسابي في سناب شات لتشغيل البوت:\n{SNAP_LINK}\n\n"
-            f"-----------------------------------\n"
-            f"First, please follow my Snapchat account to activate the bot:\n{SNAP_LINK}")
+    text = (
+        "أهلاً بك في بوت تحميل مقاطع وصور التيك توك بدون العلامة المائية\n"
+        "Welcome to TikTok video and photo downloader bot without watermark\n"
+        "ولتشغيل البوت يرجى متابعة حسابي في سناب شات أولاً\n"
+        "To activate the bot please follow my Snapchat account first\n\n"
+        f"{SNAP_LINK}"
+    )
     bot.send_message(chat_id, text, reply_markup=markup)
 
-# --- 4. معالجة زر "تم المتابعة" (خطوة واحدة فقط) ---
-@bot.callback_query_handler(func=lambda call: call.data == "verify_me")
-def verify_user(call):
+# --- نظام التحقق (الخطأ ثم النجاح) ---
+@bot.callback_query_handler(func=lambda call: call.data == "verify_step")
+def handle_verification(call):
     user_id = call.message.chat.id
-    verified_users.add(user_id)
+    if user_id not in verified_users:
+        verified_users.add(user_id) 
+        markup = types.InlineKeyboardMarkup()
+        btn = types.InlineKeyboardButton("تمت المتابعة ✅ Done", callback_data="final_check")
+        markup.add(btn)
+        
+        fail_text = (
+            "لم يتم التحقق من متابعتك لحسابي على سناب شات\n"
+            "Your follow to my Snapchat account has not been verified\n"
+            "برجاء التأكد مرة أخرى\n"
+            "Please check again\n\n"
+            f"{SNAP_LINK}"
+        )
+        bot.edit_message_text(fail_text, user_id, call.message.message_id, reply_markup=markup)
     
-    success_text = ("تم تفعيل البوت بنجاح! ✅ أرسل الآن رابط تيك توك.\n"
-                    "-----------------------------------\n"
-                    "Bot activated successfully! ✅ Send TikTok link now.")
+@bot.callback_query_handler(func=lambda call: call.data == "final_check")
+def handle_final_check(call):
+    user_id = call.message.chat.id
+    success_text = (
+        "تم تفعيل البوت بنجاح\n"
+        "Bot activated successfully\n"
+        "الرجاء إرسال رابط تيك توك\n"
+        "Please send TikTok link"
+    )
     bot.edit_message_text(success_text, user_id, call.message.message_id)
+    verified_users.add(f"active_{user_id}")
 
-# --- 5. معالج الرسائل الرئيسي ---
+# --- معالجة التحميل (فيديو وصور) ---
 @bot.message_handler(func=lambda message: True)
-def handle_all(message):
+def handle_messages(message):
     user_id = message.chat.id
     text = message.text
+    active_key = f"active_{user_id}"
 
-    # إذا لم يضغط المستخدم على الزر بعد
-    if user_id not in verified_users:
-        send_follow_request(user_id)
+    if active_key not in verified_users:
+        send_subscription_request(user_id)
         return
 
-    # إذا كان المستخدم مفعلاً
     if "tiktok.com" in text:
-        progress_msg = bot.reply_to(message, "جاري التحميل... ⏳ | Downloading... ⏳")
+        prog_msg = bot.reply_to(message, "جاري التحميل... ⏳\nDownloading... ⏳")
+        
         try:
-            filename = f"video_{user_id}.mp4"
-            ydl_opts = {
-                'outtmpl': filename,
-                'format': 'best',
-                'quiet': True,
-                'no_warnings': True
-            }
+            # إعدادات yt-dlp لجلب الروابط المباشرة
+            ydl_opts = {'quiet': True, 'no_warnings': True}
             with YoutubeDL(ydl_opts) as ydl:
-                ydl.download([text])
+                info = ydl.extract_info(text, download=False)
+                
+                # حالة الصور (Slideshow)
+                if 'entries' in info or ('formats' not in info and 'images' in info):
+                    images = info.get('images', [])
+                    if not images and 'entries' in info:
+                        images = info['entries'][0].get('images', [])
+                        
+                    if images:
+                        media_group = []
+                        for i, img in enumerate(images[:10]): # حد أقصى 10 صور
+                            img_url = img.get('url')
+                            if img_url:
+                                caption = "تمت التحميل بنجاح ✅\nDownloaded successfully ✅" if i == 0 else ""
+                                media_group.append(types.InputMediaPhoto(img_url, caption=caption))
+                        
+                        bot.send_media_group(user_id, media_group)
+                        bot.delete_message(user_id, prog_msg.message_id)
+                        return
+
+                # حالة الفيديو
+                filename = f"vid_{user_id}.mp4"
+                ydl_opts_dl = {'outtmpl': filename, 'format': 'best', 'quiet': True}
+                with YoutubeDL(ydl_opts_dl) as ydl_dl:
+                    ydl_dl.download([text])
+                
+                with open(filename, 'rb') as video:
+                    bot.send_video(user_id, video, caption="تمت التحميل بنجاح ✅\nDownloaded successfully ✅")
+                
+                os.remove(filename)
+                bot.delete_message(user_id, prog_msg.message_id)
             
-            with open(filename, 'rb') as video:
-                bot.send_video(user_id, video, caption="تم تحميل الفيديو بنجاح ✅\nVideo downloaded successfully ✅")
-            
-            os.remove(filename)
-            bot.delete_message(user_id, progress_msg.message_id)
-            
-        except Exception:
-            bot.edit_message_text("حدث خطأ، تأكد من الرابط.\nError, check the link.", user_id, progress_msg.message_id)
+        except Exception as e:
+            error_text = (
+                "حدث خطأ في التحميل\n"
+                "Download error occurred\n"
+                "للمساهمة الرجاء ابلاغ المطور بالخطأ\n"
+                "To contribute, please report the error to the developer"
+            )
+            bot.edit_message_text(error_text, user_id, prog_msg.message_id)
+            bot.send_message(ADMIN_ID, f"🚨 Error Log:\nLink: {text}\nError: {str(e)[:200]}")
     
     else:
-        # إذا أرسل أي شيء غير رابط تيك توك
-        bot.reply_to(message, "⚠️ عذراً، هذا ليس رابط تيك توك صحيح!\n"
-                             "-----------------------------------\n"
-                             "⚠️ Sorry, this is not a valid TikTok link!")
+        bot.reply_to(message, "الرجاء التحقق من الرابط\nPlease check the link")
 
-# تشغيل البوت
-if __name__ == "__main__":
-    keep_alive()
-    bot.polling(non_stop=True)
-
+bot.infinity_polling()
