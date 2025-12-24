@@ -4,118 +4,79 @@ from telebot import types
 from yt_dlp import YoutubeDL
 from flask import Flask
 from threading import Thread
+import requests
 
-# --- 1. سيرفر Flask لمنع دخول البوت في وضع "النوم" ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "Bot is Running!"
-
-def run():
-    # تشغيل السيرفر على المنفذ 8080 وهو المتوافق مع Render
-    app.run(host='0.0.0.0', port=8080)
-
+def home(): return "Active"
+def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
     t = Thread(target=run)
     t.daemon = True
     t.start()
 
-# --- 2. إعدادات البوت ---
-# سيقوم الكود بقراءة التوكن من Environment Variables في Render باسم BOT_TOKEN
 API_TOKEN = os.getenv('BOT_TOKEN')
-SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" 
-
 bot = telebot.TeleBot(API_TOKEN)
 user_status = {}
 
-# --- 3. نظام التحقق والمتابعة ---
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.chat.id
-    user_status[user_id] = "step_1"
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("تمت المتابعة ✅ Done", callback_data="check_1"))
-    
-    msg = f"⚠️ يرجى متابعة حسابي في سناب شات أولاً لتفعيل البوت:\n\n{SNAP_LINK}"
-    bot.send_message(user_id, msg, reply_markup=markup)
+def start(message):
+    user_status[message.chat.id] = "verified" # للتجربة الآن تخطينا التحقق للتأكد من الصور
+    bot.reply_to(message, "✅ أرسل رابط الصور الآن للتجربة.")
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_inline(call):
-    user_id = call.message.chat.id
-    if call.data == "check_1":
-        user_status[user_id] = "step_2"
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("تأكيد المتابعة ✅ Confirm", callback_data="check_final"))
-        bot.send_message(user_id, "❌ لم يتم التحقق، تأكد من المتابعة ثم اضغط تأكيد.\n" + SNAP_LINK, reply_markup=markup)
-        bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=None)
-    elif call.data == "check_final":
-        user_status[user_id] = "verified"
-        bot.send_message(user_id, "✅ تم تفعيل البوت بنجاح! أرسل الآن رابط الفيديو أو الصور.")
-        bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=None)
-
-# --- 4. معالج التحميل المطور (يدعم الفيديو والصور Slideshow) ---
 @bot.message_handler(func=lambda message: True)
-def handle_download(message):
-    user_id = message.chat.id
+def handle(message):
     url = message.text.strip()
-
-    # التحقق من حالة المتابعة
-    if user_status.get(user_id) != "verified":
-        send_welcome(message)
-        return
-
-    # دعم شامل لجميع أنواع روابط تيك توك بما فيها المختصرة vt.tiktok
-    if any(x in url for x in ["tiktok.com", "douyin.com"]):
-        progress = bot.reply_to(message, "⏳ جاري المعالجة واستخراج المحتوى...")
+    if "tiktok.com" in url:
+        prog = bot.reply_to(message, "📸 جاري محاولة صيد الصور...")
         try:
-            # إعدادات متقدمة لاستخراج البيانات دون تحميلها فوراً
+            # إعدادات خاصة جداً للصور
             ydl_opts = {
                 'quiet': True,
                 'no_warnings': True,
-                'format': 'best',
                 'extract_flat': False,
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'skip_download': True,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                }
             }
             
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 
-                # --- محاولة جلب الصور أولاً (Slideshow) ---
-                images_data = info.get('images') or (info.get('entries')[0].get('images') if info.get('entries') else None)
-                
-                if images_data:
-                    media_group = []
-                    for img in images_data[:10]: # تليجرام يدعم حد أقصى 10 صور في الرسالة الواحدة
-                        img_url = img.get('url')
-                        if img_url:
-                            media_group.append(types.InputMediaPhoto(img_url))
+                # فحص كل المسارات الممكنة للصور في بيانات تيك توك الجديدة
+                imgs = info.get('images') or \
+                       (info.get('entries')[0].get('images') if info.get('entries') else None) or \
+                       info.get('thumbnails')
+
+                if imgs and len(imgs) > 1: # إذا كان أكثر من صورة واحدة (سلايدشو)
+                    media = []
+                    for i in imgs:
+                        u = i.get('url')
+                        if u and not u.endswith('.webp'): # تليجرام يفضل jpg/png
+                            media.append(types.InputMediaPhoto(u))
+                        if len(media) == 10: break # حد تليجرام
                     
-                    if media_group:
-                        bot.send_media_group(user_id, media_group)
-                        bot.delete_message(user_id, progress.message_id)
+                    if media:
+                        bot.send_media_group(message.chat.id, media)
+                        bot.delete_message(message.chat.id, prog.message_id)
                         return
 
-                # --- إذا لم تكن صور، يتم تحميل الفيديو ---
-                file_name = f"video_{user_id}.mp4"
-                ydl_opts['outtmpl'] = file_name
-                with YoutubeDL(ydl_opts) as ydl_dl:
-                    ydl_dl.download([url])
-                
-                if os.path.exists(file_name):
-                    with open(file_name, 'rb') as v:
-                        bot.send_video(user_id, v, supports_streaming=True, caption="✅ تم تحميل الفيديو بنجاح")
-                    os.remove(file_name) # حذف الملف بعد الإرسال لتوفير المساحة
-                
-                bot.delete_message(user_id, progress.message_id)
-                
-        except Exception as e:
-            bot.edit_message_text(f"❌ حدث خطأ في التحميل.\nتأكد من أن الرابط عام وليس لحساب خاص.", user_id, progress.message_id)
-    else:
-        bot.reply_to(message, "❌ الرابط غير مدعوم، يرجى إرسال رابط تيك توك صحيح.")
+                # إذا لم تكن صور، يحمل فيديو كخيار بديل
+                bot.edit_message_text("🎥 لم أجد صوراً، سأحاول تحميله كفيديو...", message.chat.id, prog.message_id)
+                ydl_opts['skip_download'] = False
+                ydl_opts['outtmpl'] = f'vid_{message.chat.id}.mp4'
+                with YoutubeDL(ydl_opts) as ydl_v:
+                    ydl_v.download([url])
+                with open(f'vid_{message.chat.id}.mp4', 'rb') as v:
+                    bot.send_video(message.chat.id, v)
+                os.remove(f'vid_{message.chat.id}.mp4')
+                bot.delete_message(message.chat.id, prog.message_id)
 
-if __name__ == "__main__":
-    # تشغيل سيرفر التنبيه
-    keep_alive() 
-    # تشغيل البوت مع إعدادات تحمل انقطاع السيرفر
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        except Exception as e:
+            bot.edit_message_text(f"❌ فشل الصيد: {str(e)[:50]}", message.chat.id, prog.message_id)
+
+keep_alive()
+bot.infinity_polling()
