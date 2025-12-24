@@ -5,8 +5,8 @@ from telebot import types
 from yt_dlp import YoutubeDL
 
 # --- إعدادات البوت ---
-API_TOKEN = 'ضع_التوكن_هنا'  # استبدل هذا الكلمة بالتوكن الجديد من BotFather
-ADMIN_ID = 'ضع_الآيدي_هنا'   # آيدي حسابك لتلقي تنبيهات الأخطاء
+API_TOKEN = '8128459308:AAFHJSWYqowaJbI-M8bzkcgOHZEvaPbMpP0' BotFather
+ADMIN_ID = '5148560761'  
 SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -130,3 +130,4 @@ def handle_download(message):
 if __name__ == "__main__":
     print("Bot is Running on Oracle...")
     bot.infinity_polling()
+
