@@ -5,7 +5,7 @@ from telebot import types
 from yt_dlp import YoutubeDL
 
 # --- إعدادات أساسية ---
-API_TOKEN = '8128459308:AAGlhRg9IU2pxyY71WdduoFQegSBN1B6KIo'
+API_TOKEN = '8128459308:AAFHJSWYqowaJbI-M8bzkcgOHZEvaPbMpP0'
 ADMIN_ID = '5148560761'
 SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 
@@ -125,3 +125,4 @@ def handle_messages(message):
         bot.reply_to(message, invalid_text)
 
 bot.infinity_polling()
+
