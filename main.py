@@ -22,8 +22,8 @@ def keep_alive():
 
 # --- 2. إعداد البوت ---
 # سيقوم البوت بسحب التوكن من إعدادات ريندر (Environment Variables)
-API_TOKEN = os.getenv('8128459308:AAFHJSWYqowaJbI-M8bzkcgOHZEvaPbMpP0')
-ADMIN_ID = os.getenv('5148560761') # اختياري: ضعه في ريندر لاستلام بلاغات الخطأ
+API_TOKEN = '8128459308:AAFHJSWYqowaJbI-M8bzkcgOHZEvaPbMpP0'
+ADMIN_ID = '5148560761'
 SNAP_LINK = "https://snapchat.com/t/wxsuV6qD" 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -141,3 +141,4 @@ if __name__ == "__main__":
     keep_alive() # تشغيل سيرفر ويب صغير في الخلفية
     print("Bot is Running on Render...")
     bot.infinity_polling()
+
