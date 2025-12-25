@@ -19,57 +19,42 @@ SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 bot = telebot.TeleBot(API_TOKEN)
 user_status = {}
 
-# --- 3. نظام التحقق والمتابعة (رسائل منفصلة) ---
+# --- 3. نظام التحقق والمتابعة (Bold + HTML) ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.chat.id
-    
-    # رسالة الترحيب الأولى
     welcome_text = (
-        "اهلا بك 👋🏼\n"
-        "شكرا لاستخدامك بوت تحميل مقاطع تيك توك \n"
-        "أولا سيجب عليك متابعة حسابي في سناب شات لتشغيل البوت\n\n"
-        "Welcome 👋🏼\n"
+        "<b>اهلا بك 👋🏼</b>\n"
+        "شكرا لاستخدامك بوت تحميل مقاطع تيك توك\n"
+        "<b>⚠️ أولاً سيجب عليك متابعة حسابي في سناب شات لتشغيل البوت</b>\n\n"
+        "<b>Welcome 👋🏼</b>\n"
         "Thank you for using TikTok Downloader Bot\n"
-        "First, you'll need to follow my Snapchat account to activate the bot"
+        "<b>⚠️ First, you'll need to follow my Snapchat account to activate the bot</b>"
     )
-    
     markup = types.InlineKeyboardMarkup()
-    btn_follow = types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK)
-    btn_confirm = types.InlineKeyboardButton("تفعيل البوت 🔓 Activate", callback_data="tt_step_1")
-    markup.add(btn_follow)
-    markup.add(btn_confirm)
-    
-    bot.send_message(user_id, welcome_text, reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK))
+    markup.add(types.InlineKeyboardButton("تفعيل البوت 🔓 Activate", callback_data="tt_step_1"))
+    bot.send_message(user_id, welcome_text, reply_markup=markup, parse_mode='HTML')
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_verification(call):
     user_id = call.message.chat.id
-    
     if call.data == "tt_step_1":
-        # رسالة الاعتذار المنفصلة
         fail_msg = (
-            "نعتذر منك لم يتم التحقق من متابعتك لحساب سناب شات ❌👻\n"
-            "الرجاء الضغط على متابعة الحساب وسيتم توجيهك لسناب شات وبعد المتابعة اضغط على زر تفعيل البوت 🔓\n\n"
-            "We apologize, but your Snapchat account follow request has not been verified. ❌👻\n"
-            "Please click \"Follow Account\" and you will be redirected to Snapchat. After following, click the \"Activate\" button. 🔓"
+            "<b>نعتذر منك لم يتم التحقق من متابعتك لحساب سناب شات ❌👻</b>\n"
+            "الرجاء الضغط على متابعة الحساب وسيتم توجيهك لسناب شات وبعد المتابعة اضغط على زر <b>تفعيل البوت 🔓</b>\n\n"
+            "<b>We apologize, but your Snapchat account follow request has not been verified. ❌👻</b>\n"
+            "Please click Follow Account and you will be redirected to Snapchat. After following, click the <b>Activate</b> button. 🔓"
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK))
         markup.add(types.InlineKeyboardButton("تفعيل البوت 🔓 Activate", callback_data="tt_step_2"))
-        bot.send_message(user_id, fail_msg, reply_markup=markup)
-        
+        bot.send_message(user_id, fail_msg, reply_markup=markup, parse_mode='HTML')
     elif call.data == "tt_step_2":
         user_status[user_id] = "verified"
-        success_text = (
-            "تم تفعيل البوت بنجاح ✅\n"
-            "الرجاء ارسال الرابط 🔗\n\n"
-            "The bot has been successfully activated ✅ \n"
-            "Please send the link 🔗"
-        )
-        bot.send_message(user_id, success_text)
+        bot.send_message(user_id, "<b>تم تفعيل البوت بنجاح ✅\nالرجاء ارسال الرابط 🔗\n\n<b>The bot has been successfully activated ✅</b></b>", parse_mode='HTML')
 
-# --- 4. معالج تحميل تيك توك ---
+# --- 4. معالج تحميل تيك توك المطور ---
 @bot.message_handler(func=lambda message: True)
 def handle_tiktok(message):
     user_id = message.chat.id
@@ -80,9 +65,7 @@ def handle_tiktok(message):
         return
 
     if "tiktok.com" in url or "douyin.com" in url:
-        # رسالة جاري التحميل
-        loading_text = "جاري التحميل ... ⏳\nLoading... ⏳"
-        prog = bot.reply_to(message, loading_text)
+        prog = bot.reply_to(message, "<b>جاري التحميل ... ⏳\nLoading... ⏳</b>", parse_mode='HTML')
         
         try:
             api_url = f"https://www.tikwm.com/api/?url={url}"
@@ -103,28 +86,28 @@ def handle_tiktok(message):
                     if video_url:
                         bot.send_video(user_id, video_url)
                 
-                # رسالة النجاح
-                bot.send_message(user_id, "تم التحميل ✅\nDone ✅")
+                bot.send_message(user_id, "<b>تم التحميل ✅\nDone ✅</b>", parse_mode='HTML')
                 bot.delete_message(user_id, prog.message_id)
                 
             else:
                 raise Exception("API Error")
         
         except Exception:
-            # رسالة المشكلة التقنية
+            # رسالة المشكلة التقنية بالخط العريض
             error_tech = (
-                "نعتذر منك نواجه الان مشكله تقنية وسيتم معالجتها في أقرب وقت ❌\n\n"
-                "We apologize, we are currently experiencing a technical issue and it will be resolved as soon as possible ❌"
+                "<b>نعتذر منك نواجه الان مشكله تقنية وسيتم معالجتها في أقرب وقت ❌</b>\n\n"
+                "<b>We apologize, we are currently experiencing a technical issue and it will be resolved as soon as possible ❌</b>"
             )
-            bot.edit_message_text(error_tech, user_id, prog.message_id)
+            bot.edit_message_text(error_tech, user_id, prog.message_id, parse_mode='HTML')
     else:
-        # رسالة الرابط غير الصحيح
-        wrong_link = "الرجاء ارسال رابط الصحيح ❌\nPlease send the correct link ❌"
-        bot.reply_to(message, wrong_link)
+        bot.reply_to(message, "<b>الرجاء ارسال الرابط الصحيح ❌\nPlease send the correct link ❌</b>", parse_mode='HTML')
 
-# --- 5. التشغيل ---
+# --- 5. التشغيل الآمن ---
 if __name__ == "__main__":
     keep_alive()
-    bot.remove_webhook()
+    try:
+        bot.remove_webhook()
+    except:
+        pass
     time.sleep(1)
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
