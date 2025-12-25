@@ -1,12 +1,14 @@
-import os, telebot, yt_dlp, time
+import os
+import telebot
 from telebot import types
+import requests
 from flask import Flask
 from threading import Thread
 
-# --- 1. سيرفر Flask ---
+# --- 1. سيرفر Flask لمنع النوم ---
 app = Flask('')
 @app.route('/')
-def home(): return "X Downloader is Live!"
+def home(): return "Bot is Live!"
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
     t = Thread(target=run)
@@ -19,43 +21,35 @@ SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 bot = telebot.TeleBot(API_TOKEN)
 user_status = {}
 
-# --- 3. نظام التحقق والمتابعة ---
+# --- 3. نظام التحقق (رسائل منفصلة بتنسيق موحد) ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.chat.id
-    welcome_text = (
-        "اهلا بك 👋🏼\n"
-        "شكرا لاستخدامك بوت حفظ السنابات 👻\n"
-        "أولا سيجب عليك متابعة حسابي في سناب شات لتشغيل البوت \n"
-        "ثم الضغط على /start \n\n"
-        "Welcome 👋🏼\n"
-        "Thank you for using the Snap Saver Bot 👻\n"
-        "First, you'll need to follow my Snapchat account to activate the bot\n"
-        "Then, click on /start"
-    )
+    user_status[user_id] = "step_1"
     markup = types.InlineKeyboardMarkup()
-    btn_follow = types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK)
-    btn_confirm = types.InlineKeyboardButton("تفعيل البوت 🔓 Activate", callback_data="verify_x")
-    markup.add(btn_follow)
-    markup.add(btn_confirm)
-    bot.send_message(user_id, welcome_text, reply_markup=markup)
+    markup.add(types.InlineKeyboardButton("✅ تمت المتابعة | Done", callback_data="check_1"))
+    
+    msg = f"⚠️ يرجى متابعة حسابي أولاً لتفعيل البوت:\nPlease follow my account first:\n\n{SNAP_LINK}"
+    bot.send_message(user_id, msg, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data == "verify_x")
-def verify_user(call):
+@bot.callback_query_handler(func=lambda call: True)
+def callback_inline(call):
     user_id = call.message.chat.id
-    user_status[user_id] = "verified"
-    success_text = (
-        "تم تفعيل البوت بنجاح ✅\n"
-        "الرجاء ارسال الرابط 🔗\n\n"
-        "The bot has been successfully activated ✅ \n"
-        "Please send the link 🔗"
-    )
-    bot.delete_message(user_id, call.message.message_id)
-    bot.send_message(user_id, success_text)
+    if call.data == "check_1":
+        user_status[user_id] = "step_2"
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("✅ تأكيد | Confirm", callback_data="check_final"))
+        bot.send_message(user_id, f"❌ لم يتم التحقق بعد، تأكد من المتابعة ثم اضغط تأكيد\nVerification failed, make sure to follow then confirm:\n\n{SNAP_LINK}", reply_markup=markup)
+        bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=None)
+    
+    elif call.data == "check_final":
+        user_status[user_id] = "verified"
+        bot.send_message(user_id, "✅ تم تفعيل البوت بنجاح! أرسل الرابط الآن\nBot activated successfully! Send the link now")
+        bot.edit_message_reply_markup(user_id, call.message.message_id, reply_markup=None)
 
-# --- 4. معالج تحميل منصة X ---
+# --- 4. معالج التحميل باستخدام الـ API الخارجي ---
 @bot.message_handler(func=lambda message: True)
-def handle_x(message):
+def handle_tiktok(message):
     user_id = message.chat.id
     url = message.text.strip()
 
@@ -63,38 +57,38 @@ def handle_x(message):
         send_welcome(message)
         return
 
-    if "x.com" in url or "twitter.com" in url:
-        loading_msg = "جاري التحميل ... ⏳\nLoading... ⏳"
-        prog = bot.reply_to(message, loading_msg)
-        
-        ydl_opts = {'format': 'best', 'quiet': True, 'no_warnings': True}
-        
+    if "tiktok.com" in url or "douyin.com" in url:
+        prog = bot.reply_to(message, "⏳ جاري التحميل... | Downloading...")
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_url = info.get('url')
+            api_url = f"https://www.tikwm.com/api/?url={url}"
+            response = requests.get(api_url).json()
+            
+            if response.get('code') == 0:
+                data = response['data']
                 
-                if video_url:
-                    bot.send_video(user_id, video_url)
-                    bot.send_message(user_id, "تم التحميل ✅\nDone ✅")
+                # تحميل الصور (Slideshow)
+                images = data.get('images')
+                if images:
+                    media_group = []
+                    for img_url in images[:10]:
+                        media_group.append(types.InputMediaPhoto(img_url))
+                    bot.send_media_group(user_id, media_group)
                     bot.delete_message(user_id, prog.message_id)
-                else:
-                    raise Exception()
-        except:
-            tech_error = (
-                "نعتذر منك نواجه الان مشكله تقنية وسيتم معالجتها في أقرب وقت ❌\n\n"
-                "We apologize, we are currently experiencing a technical issue and it will be resolved as soon as possible ❌"
-            )
-            bot.edit_message_text(tech_error, user_id, prog.message_id)
-    else:
-        bot.reply_to(message, "الرجاء ارسال رابط الصحيح ❌\nPlease send the correct link ❌")
+                    return
 
-# --- 5. التشغيل الآمن ---
-if __name__ == "__main__":
-    keep_alive()
-    # تنظيف شامل قبل التشغيل
-    bot.remove_webhook()
-    time.sleep(1) # تأخير بسيط لضمان استقرار الاتصال
-    print("X Bot is starting...")
-    # استخدام skip_pending_updates من خلال polling
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+                # تحميل الفيديو
+                video_url = data.get('play')
+                if video_url:
+                    bot.send_video(user_id, video_url, caption="✅ تم التحميل بنجاح | Downloaded Successfully")
+                    bot.delete_message(user_id, prog.message_id)
+                    return
+            else:
+                bot.edit_message_text("❌ فشل جلب الرابط، تأكد أنه ليس حساباً خاصاً\nFailed to get link, make sure it's not private", user_id, prog.message_id)
+        
+        except Exception as e:
+            bot.edit_message_text(f"❌ خطأ تقني | Technical Error", user_id, prog.message_id)
+    else:
+        bot.reply_to(message, "❌ يرجى إرسال رابط صحيح | Please send a valid link")
+
+keep_alive()
+bot.infinity_polling()
