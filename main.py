@@ -2,11 +2,12 @@ import os, telebot, requests, time
 from telebot import types
 from flask import Flask
 from threading import Thread
+from yt_dlp import YoutubeDL
 
-# --- 1. سيرفر Flask للحفاظ على نشاط البوت ---
+# --- 1. سيرفر Flask للحفاظ على نشاط البوت على Render ---
 app = Flask('')
 @app.route('/')
-def home(): return "TikTok Downloader Live"
+def home(): return "TikTok Ultra Bot is Online"
 def run(): app.run(host='0.0.0.0', port=8080)
 def keep_alive():
     t = Thread(target=run)
@@ -19,7 +20,27 @@ SNAP_LINK = "https://snapchat.com/t/wxsuV6qD"
 bot = telebot.TeleBot(API_TOKEN)
 user_status = {}
 
-# --- 3. نظام التحقق والمتابعة (Bold + HTML) ---
+# --- 3. وظائف التحميل (السرعة ثم القوة) ---
+
+def get_tikwm(url):
+    """المحرك الأول: الأسرع (API)"""
+    try:
+        res = requests.get(f"https://www.tikwm.com/api/?url={url}", timeout=10).json()
+        if res.get('code') == 0:
+            return res['data']
+    except: return None
+
+def get_ytdlp(url):
+    """المحرك الثاني: الأقوى (Library)"""
+    try:
+        ydl_opts = {'format': 'best', 'quiet': True, 'no_warnings': True}
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {'play': info['url']}
+    except: return None
+
+# --- 4. نظام التحقق والمتابعة (أسلوبك الخاص) ---
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.chat.id
@@ -54,12 +75,14 @@ def handle_verification(call):
         user_status[user_id] = "verified"
         bot.send_message(user_id, "<b>تم تفعيل البوت بنجاح ✅\nالرجاء ارسال الرابط 🔗\n\n<b>The bot has been successfully activated ✅</b></b>", parse_mode='HTML')
 
-# --- 4. معالج تحميل تيك توك المطور ---
+# --- 5. معالج التحميل الرئيسي (دمج الأسلوب مع القوة) ---
+
 @bot.message_handler(func=lambda message: True)
 def handle_tiktok(message):
     user_id = message.chat.id
     url = message.text.strip()
 
+    # التحقق من حالة التفعيل
     if user_status.get(user_id) != "verified":
         send_welcome(message)
         return
@@ -67,47 +90,48 @@ def handle_tiktok(message):
     if "tiktok.com" in url or "douyin.com" in url:
         prog = bot.reply_to(message, "<b>جاري التحميل ... ⏳\nLoading... ⏳</b>", parse_mode='HTML')
         
-        try:
-            api_url = f"https://www.tikwm.com/api/?url={url}"
-            response = requests.get(api_url).json()
-            
-            if response.get('code') == 0:
-                data = response['data']
-                
-                # 1. تحميل الصور (Slideshow)
+        # محاولة 1: TikWM (السرعة)
+        data = get_tikwm(url)
+        
+        if data:
+            try:
+                # إذا كان ألبوم صور
                 images = data.get('images')
                 if images:
                     media_group = [types.InputMediaPhoto(img_url) for img_url in images[:10]]
                     bot.send_media_group(user_id, media_group)
-                
-                # 2. تحميل الفيديو (بدون علامة مائية)
+                # إذا كان فيديو
                 else:
                     video_url = data.get('play')
                     if video_url:
-                        bot.send_video(user_id, video_url)
+                        bot.send_video(user_id, video_url, caption="<b>تم التحميل بواسطة ALL MEDIA ✅</b>", parse_mode='HTML')
                 
                 bot.send_message(user_id, "<b>تم التحميل ✅\nDone ✅</b>", parse_mode='HTML')
                 bot.delete_message(user_id, prog.message_id)
-                
-            else:
-                raise Exception("API Error")
-        
-        except Exception:
-            # رسالة المشكلة التقنية بالخط العريض
-            error_tech = (
-                "<b>نعتذر منك نواجه الان مشكله تقنية وسيتم معالجتها في أقرب وقت ❌</b>\n\n"
-                "<b>We apologize, we are currently experiencing a technical issue and it will be resolved as soon as possible ❌</b>"
-            )
-            bot.edit_message_text(error_tech, user_id, prog.message_id, parse_mode='HTML')
-    else:
-        bot.reply_to(message, "<b>الرجاء ارسال الرابط الصحيح ❌\nPlease send the correct link ❌</b>", parse_mode='HTML')
+                return
+            except: pass # إذا فشل الإرسال ننتقل للمحرك الثاني
 
-# --- 5. التشغيل الآمن ---
+        # محاولة 2: yt-dlp (المحرك الاحتياطي الأقوى)
+        bot.edit_message_text("<b>جاري استخدام المحرك الاحتياطي الأقوى... ⚙️</b>", user_id, prog.message_id, parse_mode='HTML')
+        data_alt = get_ytdlp(url)
+        
+        if data_alt:
+            try:
+                bot.send_video(user_id, data_alt['play'], caption="<b>تم التحميل عبر المحرك الاحتياطي ✅</b>", parse_mode='HTML')
+                bot.send_message(user_id, "<b>تم التحميل ✅\nDone ✅</b>", parse_mode='HTML')
+                bot.delete_message(user_id, prog.message_id)
+            except:
+                bot.edit_message_text("<b>نعتذر، حجم الملف كبير جداً أو الرابط محمي ❌</b>", user_id, prog.message_id, parse_mode='HTML')
+        else:
+            bot.edit_message_text("<b>الرجاء ارسال الرابط الصحيح ❌\nPlease send the correct link ❌</b>", user_id, prog.message_id, parse_mode='HTML')
+    else:
+        bot.reply_to(message, "<b>الرجاء ارسال رابط تيك توك صحيح 🔗</b>", parse_mode='HTML')
+
+# --- 6. التشغيل الآمن ---
 if __name__ == "__main__":
     keep_alive()
     try:
         bot.remove_webhook()
-    except:
-        pass
+    except: pass
     time.sleep(1)
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
