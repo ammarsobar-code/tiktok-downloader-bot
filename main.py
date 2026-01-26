@@ -1,14 +1,27 @@
-import os, telebot, requests, time, sys, subprocess, shutil
+import os
+import telebot
+import requests
+import time
+import sys
+import subprocess
+import shutil
 from telebot import types
 from flask import Flask
 from threading import Thread
 from yt_dlp import YoutubeDL
 
-# --- 1. سيرفر Flask للحفاظ على نشاط البوت على Render ---
+# --- 1. سيرفر Flask للحفاظ على نشاط البوت على Koyeb ---
 app = Flask('')
+
 @app.route('/')
-def home(): return "TikTok Ultra Bot is Online"
-def run(): app.run(host='0.0.0.0', port=8080)
+def home():
+    return "TikTok Ultra Bot is Online 24/7"
+
+def run():
+    # تعديل المنفذ ليتوافق مع إعدادات Koyeb التي ظهرت في صورك (8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host='0.0.0.0', port=port)
+
 def keep_alive():
     t = Thread(target=run)
     t.daemon = True
@@ -25,12 +38,13 @@ def auto_clean_environment():
         if os.name != 'nt':
             subprocess.run(["pkill", "-9", "-f", "yt-dlp"], stderr=subprocess.DEVNULL)
             
-        # تنظيف مجلد التحميلات إذا وُجد (للاحتياط)
+        # تنظيف مجلد التحميلات إذا وُجد
         if os.path.exists("downloads"):
             shutil.rmtree("downloads", ignore_errors=True)
             os.makedirs("downloads", exist_ok=True)
             
-    except: pass
+    except:
+        pass
 
 # --- 3. إعدادات البوت ---
 API_TOKEN = os.getenv('BOT_TOKEN')
@@ -45,11 +59,11 @@ def get_tikwm(url):
         res = requests.get(f"https://www.tikwm.com/api/?url={url}", timeout=10).json()
         if res.get('code') == 0:
             return res['data']
-    except: return None
+    except:
+        return None
 
 def get_ytdlp(url):
     try:
-        # إضافة إعدادات لمنع امتلاء الذاكرة
         ydl_opts = {
             'format': 'best',
             'quiet': True,
@@ -59,7 +73,8 @@ def get_ytdlp(url):
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             return {'play': info['url']}
-    except: return None
+    except:
+        return None
 
 # --- 5. نظام التحقق والمتابعة ---
 
@@ -69,10 +84,7 @@ def send_welcome(message):
     welcome_text = (
         "<b>اهلا بك 👋🏼</b>\n"
         "شكرا لاستخدامك بوت تحميل مقاطع تيك توك\n"
-        "<b>⚠️ أولاً سيجب عليك متابعة حسابي في سناب شات لتشغيل البوت</b>\n\n"
-        "<b>Welcome 👋🏼</b>\n"
-        "Thank you for using TikTok Downloader Bot\n"
-        "<b>⚠️ First, you'll need to follow my Snapchat account to activate the bot</b>"
+        "<b>⚠️ أولاً سيجب عليك متابعة حسابي في سناب شات لتشغيل البوت</b>"
     )
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK))
@@ -83,10 +95,7 @@ def send_welcome(message):
 def handle_verification(call):
     user_id = call.message.chat.id
     if call.data == "tt_step_1":
-        fail_msg = (
-            "<b>نعتذر منك لم يتم التحقق من متابعتك لحساب سناب شات ❌👻</b>\n"
-            "الرجاء الضغط على متابعة الحساب وسيتم توجيهك لسناب شات وبعد المتابعة اضغط على زر <b>تفعيل البوت 🔓</b>"
-        )
+        fail_msg = "<b>نعتذر منك لم يتم التحقق من المتابعة ❌👻</b>"
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("متابعة الحساب 👻 Follow", url=SNAP_LINK))
         markup.add(types.InlineKeyboardButton("تفعيل البوت 🔓 Activate", callback_data="tt_step_2"))
@@ -95,7 +104,7 @@ def handle_verification(call):
         user_status[user_id] = "verified"
         bot.send_message(user_id, "<b>تم تفعيل البوت بنجاح ✅\nالرجاء ارسال الرابط 🔗</b>", parse_mode='HTML')
 
-# --- 6. معالج التحميل الرئيسي (مع إضافة التنظيف) ---
+# --- 6. معالج التحميل الرئيسي ---
 
 @bot.message_handler(func=lambda message: True)
 def handle_tiktok(message):
@@ -107,10 +116,10 @@ def handle_tiktok(message):
         return
 
     if "tiktok.com" in url or "douyin.com" in url:
-        prog = bot.reply_to(message, "<b>جاري التحميل ... ⏳\nLoading... ⏳</b>", parse_mode='HTML')
+        prog = bot.reply_to(message, "<b>جاري التحميل ... ⏳</b>", parse_mode='HTML')
         
         try:
-            # محاولة 1: TikWM (السرعة)
+            # محاولة 1: TikWM
             data = get_tikwm(url)
             
             if data:
@@ -123,11 +132,10 @@ def handle_tiktok(message):
                     if video_url:
                         bot.send_video(user_id, video_url, caption="<b>✅ تم التحميل بنجاح</b>", parse_mode='HTML')
                 
-                bot.send_message(user_id, "<b>Done ✅</b>", parse_mode='HTML')
                 bot.delete_message(user_id, prog.message_id)
                 return
 
-            # محاولة 2: yt-dlp (المحرك الاحتياطي)
+            # محاولة 2: yt-dlp
             bot.edit_message_text("<b>جاري استخدام المحرك الاحتياطي... ⚙️</b>", user_id, prog.message_id, parse_mode='HTML')
             data_alt = get_ytdlp(url)
             
@@ -138,22 +146,17 @@ def handle_tiktok(message):
                 bot.edit_message_text("<b>الرابط غير مدعوم حالياً ❌</b>", user_id, prog.message_id, parse_mode='HTML')
 
         except Exception as e:
-            bot.send_message(user_id, f"<b>حدث خطأ أثناء المعالجة ❌</b>", parse_mode='HTML')
+            bot.send_message(user_id, "<b>حدث خطأ أثناء المعالجة ❌</b>", parse_mode='HTML')
         
         finally:
-            # --- أهم خطوة: التنظيف بعد كل عملية ---
             auto_clean_environment()
             
     else:
         bot.reply_to(message, "<b>الرجاء ارسال رابط تيك توك صحيح 🔗</b>", parse_mode='HTML')
 
-# --- 7. التشغيل الآمن بنظام التكرار ---
+# --- 7. التشغيل الآمن ---
 if __name__ == "__main__":
     keep_alive()
-    auto_clean_environment() # تنظيف عند بدء التشغيل
-    try:
-        bot.remove_webhook()
-    except: pass
-    time.sleep(1)
-    # استخدام infinity_polling لضمان عدم توقف البوت عند أخطاء الشبكة
-    bot.infinity_polling(timeout=20, long_polling_timeout=10, restart_on_change=False)
+    auto_clean_environment()
+    print("TikTok Bot is starting...")
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
